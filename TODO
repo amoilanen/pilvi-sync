@@ -1,0 +1,13 @@
+- Possible to upload files from a folder to Google drive
+- New files added to a folder are uploaded to Google drive
+- Possible to upload a recursive folder structure to Google drive
+- New folders inside current folder are uploaded to Google drive
+- Files renamed in a folder are renamed in Google drive
+- Files deleted in a folder are deleted in Google drive
+- Possible to configure several folders to be synchronized to Google drive
+- Configuration is stored as JSON or YAML
+- Possible to configure changes for the local folder to reflect changes in the Google drive (new file, rename, delete, create folder).
+  Simplified conflict resolution: most recent changes always win, i.e. not expected that the same file will be modified multiple times at the same time.
+- Possible to configure to use also Microsoft One Drive in addition to Google drive
+- Possible to configure to use also Dropbox in addition to Google drive
+- Tool can run as a service on a Linux machine, think about installation
