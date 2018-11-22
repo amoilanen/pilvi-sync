@@ -16,4 +16,5 @@ object Sync extends App {
   } else {
     println("Sync folder already exists")
   }
+  drive.listFiles("/").foreach(file => println(file.getName))
 }
