@@ -1,4 +1,6 @@
 - Possible to upload files from a folder to Google drive
+  - Avoid uploading multiple versions of the same file: name should make it unique inside the parent folder
+  - Files of different types can be uploaded: txt, pdf, images (png, jpeg, jpg)
   - Large files can be uploaded
   - Google drive folder name to where files are uploaded are customizable
   - Folder from where files are uploaded it customizable
@@ -7,6 +9,7 @@
 - New folders inside current folder are uploaded to Google drive
 - Files renamed in a folder are renamed in Google drive
 - Files deleted in a folder are deleted in Google drive
+- Files are downloaded from Google drive sync folder to a proper folder, if folder does not exist, it is created
 - Possible to configure several folders to be synchronized to Google drive
 - Consider using H2 file-based database and Slick to store the operational information
 - Configuration is stored as JSON or YAML
