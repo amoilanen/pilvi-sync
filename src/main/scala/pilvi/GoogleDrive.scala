@@ -16,11 +16,14 @@ import com.google.api.client.json.jackson2.JacksonFactory
 import com.google.api.client.util.store.FileDataStoreFactory
 import com.google.api.services.drive.model.{File, FileList}
 import com.google.api.services.drive.{Drive, DriveScopes}
+import pilvi.Sync.drive
 
 import scala.concurrent.{ExecutionContext, Future}
 
 case class FileId(id: String)
 
+//TODO: Make the methods of GoogleDrive asynchronous: return Future
+//TODO: Use consistent naming: folder or directory (probably folder as Google drive uses it)
 case class GoogleDrive(d: Drive)(implicit ec: ExecutionContext) {
 
   def getFileId(parentFolderId: String, fileName: String): Option[String] = {
@@ -66,6 +69,32 @@ case class GoogleDrive(d: Drive)(implicit ec: ExecutionContext) {
 
   def exists(filePath: String): Boolean =
     getFileId(filePath).isDefined
+
+  //TODO: Make asynchronous
+  def ensureExists(directoryPath: String): Unit = {
+    val pathParts = directoryPath.split('/').reverse
+    val lastDirectoryName = pathParts.head
+    val parentDirectoryPath = pathParts.tail.reverse.mkString("/")
+
+    if (parentDirectoryPath != "") {
+      ensureExists(parentDirectoryPath)
+    }
+    val parentDirectoryPathId = if (parentDirectoryPath == "")
+      "root"
+    else
+      getFileId(parentDirectoryPath).get
+
+    if (!exists(directoryPath)) {
+      val fileMetadata = new File()
+      fileMetadata.setName(lastDirectoryName)
+      fileMetadata.setParents(List(parentDirectoryPathId).asJava)
+      fileMetadata.setMimeType("application/vnd.google-apps.folder")
+      val file = drive.d.files.create(fileMetadata).setFields("id").execute
+      println("Created folder with ID: " + file.getId)
+    } else {
+      println("Folder already exists")
+    }
+  }
 }
 
 object GoogleDrive {

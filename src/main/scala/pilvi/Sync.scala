@@ -14,24 +14,43 @@ object Sync extends App {
 
   val drive: GoogleDrive = GoogleDrive.getDrive
 
-  if (!drive.exists("pilvi-sync")) {
-    val fileMetadata = new File()
-    fileMetadata.setName("pilvi-sync")
-    fileMetadata.setMimeType("application/vnd.google-apps.folder")
-    val file = drive.d.files.create(fileMetadata).setFields("id").execute
-    println("Created sync folder with ID: " + file.getId)
-  } else {
-    println("Sync folder already exists")
+  def upload(localDirectoryPath: String, remoteDirectoryPath: String): Unit = {
+    println(s"Uploading ${localDirectoryPath} to ${remoteDirectoryPath}")
+    val localFilesAndDirectories: List[LocalFile] = LocalDrive.listFiles(localDirectoryPath)
+
+    val localFiles = localFilesAndDirectories.filter(!_.isDirectory)
+    val localDirectories = localFilesAndDirectories.filter(_.isDirectory)
+    //println("Local files = ")
+    //println(localFiles)
+    //println("Local dirs = ")
+    //println(localDirectories)
+
+    drive.ensureExists(remoteDirectoryPath)
+
+    localDirectories.map(localDirectory => {
+      val directoryName = localDirectory.getName
+      upload(s"${localDirectoryPath}/${directoryName}", s"${remoteDirectoryPath}/${directoryName}")
+    })
+
+    val fileUploads: Seq[Future[Option[FileId]]] = localFiles.map(file => {
+      val relativeFileName = file.getName
+      if (!drive.exists(s"${remoteDirectoryPath}/${relativeFileName}")) {
+        println(s"${relativeFileName} uploading again")
+        drive.uploadFile(remoteDirectoryPath, file).map(Some(_))
+      } else {
+        println(s"${relativeFileName} already exists")
+        Future { None }
+      }
+    })
+
+    val fileIds = Await.ready(Future.sequence(fileUploads), 5 seconds)
+    println(fileIds)
   }
-  drive.listFiles("/").foreach(file => println(file.getName))
 
-  val localFiles: List[LocalFile] = LocalDrive.listFiles("src/main/resources/test")
+  //drive.listFiles("/").foreach(file => println(file.getName))
 
-  println(localFiles)
-  val fileUploads: Seq[Future[FileId]] = localFiles.map(file =>
-    drive.uploadFile("pilvi-sync", file)
-  )
+  val localSyncFolderPath = "src/main/resources/test"
+  val remoteFolderPath = "pilvi-sync"
 
-  val fileIds = Await.ready(Future.sequence(fileUploads), 5 seconds)
-  println(fileIds)
+  upload(localSyncFolderPath, remoteFolderPath)
 }

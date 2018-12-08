@@ -5,6 +5,8 @@
   - Google drive folder name to where files are uploaded are customizable
   - Folder from where files are uploaded it customizable
 - Possible to upload a recursive folder structure to Google drive
+- Possible to download a folder structure from Google drive
+
 - Possible to run as a daemon: new files added to a folder are uploaded to Google drive
 - New folders inside current folder are uploaded to Google drive
 - Files renamed in a folder are renamed in Google drive
