@@ -45,7 +45,7 @@ object Sync extends App {
     println(fileIds)
   }
 
-  //drive.listFiles("/").foreach(file => println(file.getName))
+  drive.listFiles(FilePath("/")).foreach(file => println(file.getName))
 
   val localSyncFolderPath = "src/main/resources/test"
   val remoteFolderPath = "pilvi-sync"

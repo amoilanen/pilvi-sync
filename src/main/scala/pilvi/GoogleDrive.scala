@@ -63,7 +63,7 @@ case class GoogleDrive(d: Drive)(implicit ec: ExecutionContext) {
     val fileId: Option[FileId] = getFileId(filePath)
 
     val foundFiles = fileId match {
-      case Some(id) => d.files.list().set("q", s"'${id}' in parents and trashed = false").execute().getFiles().asScala.toList
+      case Some(id) => d.files.list().set("q", s"'${id.value}' in parents and trashed = false").execute().getFiles().asScala.toList
       case None => List()
     }
     foundFiles
