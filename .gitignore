@@ -1,5 +1,5 @@
 target
 project/target
 .idea
-*/credentials.json
+src/main/resources/credentials.json
 tokens/
