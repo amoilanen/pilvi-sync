@@ -24,9 +24,10 @@ case class FileId(id: String)
 
 //TODO: Make the methods of GoogleDrive asynchronous: return Future
 //TODO: Use consistent naming: folder or directory (probably folder as Google drive uses it)
+//TODO: Avoid using String type excessively, instead use RemoteFileId, FilePath, FileName, etc.
 case class GoogleDrive(d: Drive)(implicit ec: ExecutionContext) {
 
-  def getFileId(parentFolderId: String, fileName: String): Option[String] = {
+  def getFileIdInParentFolder(parentFolderId: String, fileName: String): Option[String] = {
     val searchResult: FileList = d.files.list().set("q", s"'${parentFolderId}' in parents and name='${fileName}' and trashed = false").execute()
     val foundFiles = searchResult.getFiles.asScala.toList
     foundFiles.headOption.map(_.getId)
@@ -36,7 +37,7 @@ case class GoogleDrive(d: Drive)(implicit ec: ExecutionContext) {
     val pathParts = filePath.split('/')
 
     val fileId: Option[String] = pathParts.foldLeft(Option("root"))({
-      case (Some(parentFolderId), pathPart) => getFileId(parentFolderId, pathPart)
+      case (Some(parentFolderId), pathPart) => getFileIdInParentFolder(parentFolderId, pathPart)
       case (None, pathPart) => None
     })
 
@@ -70,30 +71,31 @@ case class GoogleDrive(d: Drive)(implicit ec: ExecutionContext) {
   def exists(filePath: String): Boolean =
     getFileId(filePath).isDefined
 
-  //TODO: Make asynchronous
-  def ensureExists(directoryPath: String): Unit = {
-    val pathParts = directoryPath.split('/').reverse
-    val lastDirectoryName = pathParts.head
-    val parentDirectoryPath = pathParts.tail.reverse.mkString("/")
+  def ensureFolderExistsInParentFolder(parentFolderId: String, folderName: String): String = {
+    val folderId: Option[String] = getFileIdInParentFolder(parentFolderId, folderName)
 
-    if (parentDirectoryPath != "") {
-      ensureExists(parentDirectoryPath)
-    }
-    val parentDirectoryPathId = if (parentDirectoryPath == "")
-      "root"
-    else
-      getFileId(parentDirectoryPath).get
-
-    if (!exists(directoryPath)) {
+    if (!folderId.isDefined) {
       val fileMetadata = new File()
-      fileMetadata.setName(lastDirectoryName)
-      fileMetadata.setParents(List(parentDirectoryPathId).asJava)
+      fileMetadata.setName(folderName)
+      fileMetadata.setParents(List(parentFolderId).asJava)
       fileMetadata.setMimeType("application/vnd.google-apps.folder")
       val file = drive.d.files.create(fileMetadata).setFields("id").execute
-      println("Created folder with ID: " + file.getId)
+      println(s"Created folder ${folderName} with ID: " + file.getId)
+      return file.getId
     } else {
-      println("Folder already exists")
+      println(s"Folder ${folderName} already exists")
+      folderId.get
     }
+  }
+
+  //TODO: Make asynchronous
+  def ensureExists(folderPath: String): String = {
+    val pathParts = folderPath.split('/')
+
+    val folderId: String = pathParts.foldLeft("root")({
+      case (parentFolderId, pathPart) => ensureFolderExistsInParentFolder(parentFolderId, pathPart)
+    })
+    folderId
   }
 }
 
