@@ -1,7 +1,7 @@
 package pilvi
 
 import java.io.{File => LocalFile}
-import java.io.{IOException, InputStreamReader}
+import java.io.InputStreamReader
 import java.util.Collections
 
 import scala.collection.JavaConverters._
@@ -20,32 +20,47 @@ import pilvi.Sync.drive
 
 import scala.concurrent.{ExecutionContext, Future}
 
-case class FileId(id: String)
+object FileParts {
+  case class FileId(value: String)
+  case class FileName(value: String)
+  case class FilePath(value: String) {
+    val pathParts: List[FileName] = value.split('/').toList.map(FileName(_))
+  }
+}
+
+object StringFilePartsConversions {
+  import FileParts._
+
+  implicit def toFileId(fileId: String): FileId = FileId(fileId)
+  implicit def toFileName(fileName: String): FileName = FileName(fileName)
+  implicit def toFilePath(filePath: String): FilePath = FilePath(filePath)
+}
 
 //TODO: Make the methods of GoogleDrive asynchronous: return Future
 //TODO: Use consistent naming: folder or directory (probably folder as Google drive uses it)
-//TODO: Avoid using String type excessively, instead use RemoteFileId, FilePath, FileName, etc.
 case class GoogleDrive(d: Drive)(implicit ec: ExecutionContext) {
 
-  def getFileIdInParentFolder(parentFolderId: String, fileName: String): Option[String] = {
-    val searchResult: FileList = d.files.list().set("q", s"'${parentFolderId}' in parents and name='${fileName}' and trashed = false").execute()
+  import FileParts._
+
+  def getFileIdInParentFolder(parentFolderId: FileId, fileName: FileName): Option[FileId] = {
+    val searchResult: FileList = d.files.list().set("q", s"'${parentFolderId.value}' in parents and name='${fileName.value}' and trashed = false").execute()
     val foundFiles = searchResult.getFiles.asScala.toList
-    foundFiles.headOption.map(_.getId)
+    foundFiles.headOption.map(_.getId).map(FileId(_))
   }
 
-  def getFileId(filePath: String): Option[String] = {
-    val pathParts = filePath.split('/')
+  def getFileId(filePath: FilePath): Option[FileId] = {
+    val pathParts: List[FileName] = filePath.pathParts
 
-    val fileId: Option[String] = pathParts.foldLeft(Option("root"))({
-      case (Some(parentFolderId), pathPart) => getFileIdInParentFolder(parentFolderId, pathPart)
-      case (None, pathPart) => None
+    val fileId: Option[FileId] = pathParts.foldLeft(Option(FileId("root")))({
+      case (Some(FileId(parentFolderId)), pathPart) => getFileIdInParentFolder(FileId(parentFolderId), pathPart)
+      case _ => None
     })
 
     fileId
   }
 
-  def listFiles(filePath: String): List[File] = {
-    val fileId: Option[String] = getFileId(filePath)
+  def listFiles(filePath: FilePath): List[File] = {
+    val fileId: Option[FileId] = getFileId(filePath)
 
     val foundFiles = fileId match {
       case Some(id) => d.files.list().set("q", s"'${id}' in parents and trashed = false").execute().getFiles().asScala.toList
@@ -54,10 +69,10 @@ case class GoogleDrive(d: Drive)(implicit ec: ExecutionContext) {
     foundFiles
   }
 
-  def uploadFile(parentDirectoryPath: String, file: LocalFile): Future[FileId] = {
+  def uploadFile(parentDirectoryPath: FilePath, file: LocalFile): Future[FileId] = {
     val fileMetadata = new File()
     fileMetadata.setName(file.getName)
-    fileMetadata.setParents(getFileId(parentDirectoryPath).toList.asJava)
+    fileMetadata.setParents(getFileId(parentDirectoryPath).map(_.value).toList.asJava)
 
     val mediaContent = new FileContent("text/plain", file)
     val createdFile: Future[File] = Future {
@@ -68,20 +83,20 @@ case class GoogleDrive(d: Drive)(implicit ec: ExecutionContext) {
     createdFile.map(file => FileId(file.getId))
   }
 
-  def exists(filePath: String): Boolean =
+  def exists(filePath: FilePath): Boolean =
     getFileId(filePath).isDefined
 
-  def ensureFolderExistsInParentFolder(parentFolderId: String, folderName: String): String = {
-    val folderId: Option[String] = getFileIdInParentFolder(parentFolderId, folderName)
+  def ensureFolderExistsInParentFolder(parentFolderId: FileId, folderName: FileName): FileId = {
+    val folderId: Option[FileId] = getFileIdInParentFolder(parentFolderId, folderName)
 
     if (!folderId.isDefined) {
       val fileMetadata = new File()
-      fileMetadata.setName(folderName)
-      fileMetadata.setParents(List(parentFolderId).asJava)
+      fileMetadata.setName(folderName.value)
+      fileMetadata.setParents(List(parentFolderId.value).asJava)
       fileMetadata.setMimeType("application/vnd.google-apps.folder")
       val file = drive.d.files.create(fileMetadata).setFields("id").execute
       println(s"Created folder ${folderName} with ID: " + file.getId)
-      return file.getId
+      return FileId(file.getId)
     } else {
       println(s"Folder ${folderName} already exists")
       folderId.get
@@ -89,10 +104,8 @@ case class GoogleDrive(d: Drive)(implicit ec: ExecutionContext) {
   }
 
   //TODO: Make asynchronous
-  def ensureExists(folderPath: String): String = {
-    val pathParts = folderPath.split('/')
-
-    val folderId: String = pathParts.foldLeft("root")({
+  def ensureExists(folderPath: FilePath): FileId = {
+    val folderId: FileId = folderPath.pathParts.foldLeft(FileId("root"))({
       case (parentFolderId, pathPart) => ensureFolderExistsInParentFolder(parentFolderId, pathPart)
     })
     folderId

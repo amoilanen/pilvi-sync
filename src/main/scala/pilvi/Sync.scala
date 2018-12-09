@@ -1,12 +1,10 @@
 package pilvi
 
 import scala.concurrent.duration._
-import com.google.api.services.drive.Drive
-import com.google.api.services.drive.model.{File, FileList}
 import java.io.{File => LocalFile}
-
-import scala.collection.immutable
 import scala.concurrent.{Await, ExecutionContext, Future}
+
+import FileParts._
 
 object Sync extends App {
 
@@ -25,7 +23,7 @@ object Sync extends App {
     //println("Local dirs = ")
     //println(localDirectories)
 
-    drive.ensureExists(remoteDirectoryPath)
+    drive.ensureExists(FilePath(remoteDirectoryPath))
 
     localDirectories.map(localDirectory => {
       val directoryName = localDirectory.getName
@@ -34,9 +32,9 @@ object Sync extends App {
 
     val fileUploads: Seq[Future[Option[FileId]]] = localFiles.map(file => {
       val relativeFileName = file.getName
-      if (!drive.exists(s"${remoteDirectoryPath}/${relativeFileName}")) {
+      if (!drive.exists(FilePath(s"${remoteDirectoryPath}/${relativeFileName}"))) {
         println(s"${relativeFileName} uploading again")
-        drive.uploadFile(remoteDirectoryPath, file).map(Some(_))
+        drive.uploadFile(FilePath(remoteDirectoryPath), file).map(Some(_))
       } else {
         println(s"${relativeFileName} already exists")
         Future { None }
