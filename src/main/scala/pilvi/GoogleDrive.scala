@@ -18,6 +18,7 @@ import com.google.api.services.drive.model.{File, FileList}
 import com.google.api.services.drive.{Drive, DriveScopes}
 import pilvi.Sync.drive
 
+import scala.collection.immutable
 import scala.concurrent.{ExecutionContext, Future}
 
 object FileParts {
@@ -36,77 +37,78 @@ object StringFilePartsConversions {
   implicit def toFilePath(filePath: String): FilePath = FilePath(filePath)
 }
 
-//TODO: Make the methods of GoogleDrive asynchronous: return Future
-//TODO: Use consistent naming: folder or directory (probably folder as Google drive uses it)
 case class GoogleDrive(d: Drive)(implicit ec: ExecutionContext) {
 
   import FileParts._
 
-  def getFileIdInParentFolder(parentFolderId: FileId, fileName: FileName): Option[FileId] = {
+  def getFileIdInParentFolder(parentFolderId: FileId, fileName: FileName): Future[Option[FileId]] = Future {
     val searchResult: FileList = d.files.list().set("q", s"'${parentFolderId.value}' in parents and name='${fileName.value}' and trashed = false").execute()
     val foundFiles = searchResult.getFiles.asScala.toList
     foundFiles.headOption.map(_.getId).map(FileId(_))
   }
 
-  def getFileId(filePath: FilePath): Option[FileId] = {
+  def getFileId(filePath: FilePath): Future[Option[FileId]] = {
     val pathParts: List[FileName] = filePath.pathParts
 
-    val fileId: Option[FileId] = pathParts.foldLeft(Option(FileId("root")))({
-      case (Some(FileId(parentFolderId)), pathPart) => getFileIdInParentFolder(FileId(parentFolderId), pathPart)
-      case _ => None
-    })
-
+    val fileId = pathParts.foldLeft(Future.successful(Option(FileId("root")))) { case (parentFolderId, pathPart) =>
+      parentFolderId.flatMap {
+        case Some(FileId(folderId)) => getFileIdInParentFolder(FileId(folderId), pathPart)
+        case None => Future.successful(None)
+      }
+    }
     fileId
   }
 
-  def listFiles(filePath: FilePath): List[File] = {
-    val fileId: Option[FileId] = getFileId(filePath)
+  def listFiles(filePath: FilePath): Future[List[File]] = {
+    val fileId: Future[Option[FileId]] = getFileId(filePath)
 
-    val foundFiles = fileId match {
+    val foundFiles: Future[List[File]] = fileId.map {
       case Some(id) => d.files.list().set("q", s"'${id.value}' in parents and trashed = false").execute().getFiles().asScala.toList
       case None => List()
     }
     foundFiles
   }
 
-  def uploadFile(parentDirectoryPath: FilePath, file: LocalFile): Future[FileId] = {
-    val fileMetadata = new File()
-    fileMetadata.setName(file.getName)
-    fileMetadata.setParents(getFileId(parentDirectoryPath).map(_.value).toList.asJava)
-
-    val mediaContent = new FileContent("text/plain", file)
-    val createdFile: Future[File] = Future {
-      d.files().create(fileMetadata, mediaContent)
-        .setFields("id")
-        .execute()
-    }
-    createdFile.map(file => FileId(file.getId))
-  }
-
-  def exists(filePath: FilePath): Boolean =
-    getFileId(filePath).isDefined
-
-  def ensureFolderExistsInParentFolder(parentFolderId: FileId, folderName: FileName): FileId = {
-    val folderId: Option[FileId] = getFileIdInParentFolder(parentFolderId, folderName)
-
-    if (!folderId.isDefined) {
+  def uploadFile(parentFolderPath: FilePath, file: LocalFile): Future[FileId] =
+    getFileId(parentFolderPath).flatMap { parentFileId =>
       val fileMetadata = new File()
-      fileMetadata.setName(folderName.value)
-      fileMetadata.setParents(List(parentFolderId.value).asJava)
-      fileMetadata.setMimeType("application/vnd.google-apps.folder")
-      val file = drive.d.files.create(fileMetadata).setFields("id").execute
-      println(s"Created folder ${folderName} with ID: " + file.getId)
-      return FileId(file.getId)
-    } else {
-      println(s"Folder ${folderName} already exists")
-      folderId.get
+      fileMetadata.setName(file.getName)
+      fileMetadata.setParents(parentFileId.map(_.value).toList.asJava)
+
+      val mediaContent = new FileContent("text/plain", file)
+      val createdFile: Future[File] = Future {
+        d.files().create(fileMetadata, mediaContent)
+          .setFields("id")
+          .execute()
+      }
+      createdFile.map(file => FileId(file.getId))
+    }
+
+  def exists(filePath: FilePath): Future[Boolean] =
+    getFileId(filePath).map(_.isDefined)
+
+  def ensureFolderExistsInParentFolder(parentFolderId: FileId, folderName: FileName): Future[FileId] = {
+    getFileIdInParentFolder(parentFolderId, folderName).flatMap { folderId =>
+      if (!folderId.isDefined) {
+        val fileMetadata = new File()
+        fileMetadata.setName(folderName.value)
+        fileMetadata.setParents(List(parentFolderId.value).asJava)
+        fileMetadata.setMimeType("application/vnd.google-apps.folder")
+        Future {
+          val file = drive.d.files.create(fileMetadata).setFields("id").execute
+          FileId(file.getId)
+        }
+      } else {
+        Future.successful(folderId.get)
+      }
     }
   }
 
-  //TODO: Make asynchronous
-  def ensureExists(folderPath: FilePath): FileId = {
-    val folderId: FileId = folderPath.pathParts.foldLeft(FileId("root"))({
-      case (parentFolderId, pathPart) => ensureFolderExistsInParentFolder(parentFolderId, pathPart)
+  def ensureExists(folderPath: FilePath): Future[FileId] = {
+    val folderId: Future[FileId] = folderPath.pathParts.foldLeft(Future.successful(FileId("root")))({ case (parentFolderId, pathPart) =>
+      parentFolderId.flatMap { folderId =>
+        ensureFolderExistsInParentFolder(folderId, pathPart)
+      }
     })
     folderId
   }

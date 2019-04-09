@@ -9,6 +9,8 @@ import FileParts._
 object Sync extends App {
 
   implicit val ec = ExecutionContext.global
+  
+  val timeout: Duration = 5 seconds
 
   val drive: GoogleDrive = GoogleDrive.getDrive
 
@@ -32,7 +34,7 @@ object Sync extends App {
 
     val fileUploads: Seq[Future[Option[FileId]]] = localFiles.map(file => {
       val relativeFileName = file.getName
-      if (!drive.exists(FilePath(s"${remoteDirectoryPath}/${relativeFileName}"))) {
+      if (!Await.result(drive.exists(FilePath(s"${remoteDirectoryPath}/${relativeFileName}")), timeout)) {
         println(s"${relativeFileName} uploading again")
         drive.uploadFile(FilePath(remoteDirectoryPath), file).map(Some(_))
       } else {
@@ -41,11 +43,13 @@ object Sync extends App {
       }
     })
 
-    val fileIds = Await.ready(Future.sequence(fileUploads), 5 seconds)
+    val fileIds = Await.ready(Future.sequence(fileUploads), timeout)
     println(fileIds)
   }
 
-  drive.listFiles(FilePath("/")).foreach(file => println(file.getName))
+  val files = Await.result(drive.listFiles(FilePath("/")), timeout)
+
+  files.foreach(file => println(file.getName))
 
   val localSyncFolderPath = "src/main/resources/test"
   val remoteFolderPath = "pilvi-sync"
